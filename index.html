@@ -1138,6 +1138,9 @@ body.cursor-on .cursor-ring.is-view ~ .cursor-dot { opacity: 0; }
   const CONFIG = {
     email: 'angelmaeavenido0428@gmail.com', 
     timeZone: 'Asia/Manila',
+    // Free key from https://web3forms.com (enter your email there, the key arrives in your inbox).
+    // With a key, the form really delivers messages to your email. Without it, the form opens the visitor's email app.
+    web3formsKey: 'd7b5e3e3-965e-4305-a5c7-118fea57924e',
   };
 
   /* ---------- 1. helpers ---------- */
@@ -1165,6 +1168,26 @@ body.cursor-on .cursor-ring.is-view ~ .cursor-dot { opacity: 0; }
   /* ---------- 2. basics ---------- */
   $$('[data-email]').forEach((a) => { a.href = 'mailto:' + CONFIG.email; });
   $$('[data-email-text]').forEach((el) => { el.textContent = CONFIG.email; });
+  // Clicking the email button or icon copies the address (and shows "Copied!") instead of opening a mail app
+  $$('[data-email]').forEach((a) => {
+    on(a, 'click', (e) => {
+      e.preventDefault();
+      const done = () => {
+        const label = $('[data-email-text]', a);
+        const target = label || a;
+        const old = label ? CONFIG.email : null;
+        a.classList.add('is-copied');
+        if (label) label.textContent = 'Copied! ' + CONFIG.email;
+        else a.setAttribute('aria-label', 'Email copied');
+        setTimeout(() => { a.classList.remove('is-copied'); if (label) label.textContent = old; else a.setAttribute('aria-label', 'Email'); }, 1800);
+        return target;
+      };
+      const fail = () => { window.location.href = 'mailto:' + CONFIG.email; };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(CONFIG.email).then(done, fail);
+      else fail();
+    });
+  });
+
   const yearEl = $('#year');
   if (yearEl) yearEl.textContent = new Date().getFullYear();
 
@@ -1629,16 +1652,43 @@ body.cursor-on .cursor-ring.is-view ~ .cursor-dot { opacity: 0; }
       return;
     }
     const data = new FormData(form);
-    const subject = 'Portfolio message from ' + data.get('name').trim();
-    const body = data.get('message').trim() + '\n\n' + data.get('name').trim() + '\n' + data.get('email').trim();
-    const href = 'mailto:' + CONFIG.email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(body);
-    status.textContent = '';
-    status.append('Opening your email app so you can send this. If nothing opens, email me at ');
-    const a = document.createElement('a');
-    a.href = 'mailto:' + CONFIG.email;
-    a.textContent = CONFIG.email;
-    status.append(a, '.');
-    window.location.href = href;
+    const name = data.get('name').trim(), email = data.get('email').trim(), message = data.get('message').trim();
+    const subject = 'Portfolio message from ' + name;
+
+    const fallback = (lead) => {
+      status.textContent = '';
+      status.append(lead + ' You can also email me at ');
+      const a = document.createElement('a');
+      a.href = 'mailto:' + CONFIG.email;
+      a.textContent = CONFIG.email;
+      status.append(a, '.');
+    };
+
+    // No key set: open the visitor's email app with the message filled in
+    if (!CONFIG.web3formsKey) {
+      fallback('Opening your email app so you can send this. If nothing opens,');
+      window.location.href = 'mailto:' + CONFIG.email + '?subject=' + encodeURIComponent(subject) + '&body=' + encodeURIComponent(message + '\n\n' + name + '\n' + email);
+      return;
+    }
+
+    // Key set: send straight to the owner's inbox
+    const btn = $('button[type="submit"]', form);
+    btn.disabled = true;
+    status.textContent = 'Sending your message...';
+    fetch('https://api.web3forms.com/submit', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      body: JSON.stringify({ access_key: CONFIG.web3formsKey, subject, name, email, message, from_name: 'Portfolio website' }),
+    })
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res.success) throw new Error(res.message || 'failed');
+        form.reset();
+        inputs.forEach((i) => { i.closest('.field').classList.remove('has-error'); i.setAttribute('aria-invalid', 'false'); });
+        status.textContent = 'Thank you! Your message was sent. I will reply to ' + email + ' soon.';
+      })
+      .catch(() => fallback('Sorry, your message could not be sent right now.'))
+      .finally(() => { btn.disabled = false; });
   });
 })();
 </script>
